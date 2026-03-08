@@ -16,3 +16,16 @@ const listCategories = async (status) => {
   const categories = await Category.find(query).lean();
   return Promise.all(categories.map(withProductCount));
 };
+
+const getCategoryBySlug = async (slug) => {
+  const cat = await Category.findOne({ slug }).lean();
+  if (!cat) {
+    const err = new Error("Category not found");
+    err.status = 404;
+    throw err;
+  }
+
+  return withProductCount(cat);
+};
+
+module.exports = { listCategories, getCategoryBySlug };

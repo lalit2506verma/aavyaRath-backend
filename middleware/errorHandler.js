@@ -14,7 +14,7 @@
 const MONGO_DUPLICATE_KEY = 11000;
 
 const errorHandler = (err, req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`, err);
+  console.error(`[${new Date().toISOString()}] ${req.method} ${req.path}`, err);
 
   // Mongoose validation error (schema-level, not Joi)
   if (err.name === "ValidationError") {
@@ -22,15 +22,14 @@ const errorHandler = (err, req, res, next) => {
       field: e.path,
       message: e.message,
     }));
-
     return res.status(422).json({ detail: "Validation failed", errors });
   }
 
-  // MongoDB duplicate key (e.g. unique key violation)
+  // MongoDB duplicate key (e.g. unique index violation)
   if (err.code === MONGO_DUPLICATE_KEY) {
     const field = Object.keys(err.keyValue || {})[0] || "field";
     return res.status(409).json({
-      details: `A record with this ${field} already exists`,
+      detail: `A record with this ${field} already exists`,
     });
   }
 
@@ -38,11 +37,10 @@ const errorHandler = (err, req, res, next) => {
   if (err.name === "JsonWebTokenError") {
     return res.status(401).json({ detail: "Invalid token" });
   }
-
   if (err.name === "TokenExpiredError") {
     return res
       .status(401)
-      .json({ detail: "Session Expired. Please log in again" });
+      .json({ detail: "Session expired. Please log in again." });
   }
 
   // Known application errors (thrown with a status property)
@@ -52,21 +50,21 @@ const errorHandler = (err, req, res, next) => {
 
   // Unknown / unexpected errors
   res.status(500).json({ detail: "Something went wrong. Please try again." });
+};
 
-  /**
-   * asyncHandler(fn)
-   *
-   * Wraps an async controller function so any thrown error is
-   * automatically passed to next() and handled by errorHandler.
-   *
-   * Without this, unhandled promise rejections would crash the process.
-   *
-   * Usage:
-   *   router.get('/example', asyncHandler(async (req, res) => { ... }));
-   */
-  const asyncHandler = (fn) => (req, res, next) => {
-    Promise.resolve(fn(req, res, next)).catch(next);
-  };
+/**
+ * asyncHandler(fn)
+ *
+ * Wraps an async controller function so any thrown error is
+ * automatically passed to next() and handled by errorHandler.
+ *
+ * Without this, unhandled promise rejections would crash the process.
+ *
+ * Usage:
+ *   router.get('/example', asyncHandler(async (req, res) => { ... }));
+ */
+const asyncHandler = (fn) => (req, res, next) => {
+  Promise.resolve(fn(req, res, next)).catch(next);
+};
 
-  module.exports = { errorHandler, asyncHandler };
-};;
+module.exports = { errorHandler, asyncHandler };

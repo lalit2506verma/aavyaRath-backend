@@ -48,6 +48,10 @@ const register = async ({ email, name, password, phone }) => {
  */
 const login = async ({ email, password }) => {
   const user = await User.findOne({ email }).lean();
+  console.log(email);
+  console.log(password);
+  console.log(user);
+  
 
   const valid =
     user && (await bcrypt.compare(password, user.password_hash || ""));

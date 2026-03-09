@@ -1,6 +1,15 @@
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 
+const getJwtSecret = () => {
+  if (process.env.JWT_SECRET) return process.env.JWT_SECRET;
+  if (process.env.NODE_ENV === "production") {
+    // In production we should never silently fall back to a default secret.
+    throw new Error("Server misconfigured: JWT_SECRET is not set");
+  }
+  return "dev_jwt_secret_change_me";
+};
+
 /**
  * verifyToken
  * Reads JWT from Authorization header, verifies it, and attaches
@@ -15,7 +24,7 @@ const verifyToken = async (req, res, next) => {
       return res.status(401).json({ detail: "Not authenticated" });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, getJwtSecret());
     const user = await User.findOne({ user_id: decoded.user_id }).lean();
 
     if (!user) return res.status(401).json({ detail: "User not found" });
@@ -49,7 +58,7 @@ const verifyTokenOptional = async (req, res, next) => {
       return next();
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, getJwtSecret());
     const user = await User.findOne({ user_id: decoded.user_id }).lean();
     req.user = user || null;
     next();

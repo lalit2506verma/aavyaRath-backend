@@ -9,7 +9,34 @@ const { FAQ } = require("../models/misc");
 router.post("/", async (req, res) => {
   try {
     const existing = await Category.countDocuments();
-    if (existing > 0) return res.json({ message: "Already seeded" });
+
+    // Always ensure the default admin exists, even if other collections are already seeded.
+    const adminEmail = "admin@artisanhome.com";
+    const existingAdmin = await User.findOne({ email: adminEmail }).lean();
+    if (!existingAdmin) {
+      await User.create({
+        user_id: "user_admin001",
+        email: adminEmail,
+        name: "Admin",
+        phone: "9999999999",
+        password_hash: await bcrypt.hash("Admin@123", 10),
+        role: "superadmin",
+        is_active: true,
+      });
+    } else if (!existingAdmin.password_hash) {
+      await User.updateOne(
+        { email: adminEmail },
+        { $set: { password_hash: await bcrypt.hash("Admin@123", 10) } },
+      );
+    }
+
+    if (existing > 0) {
+      return res.json({
+        message: "Already seeded",
+        admin_email: adminEmail,
+        admin_password: "Admin@123",
+      });
+    }
 
     await Category.insertMany([
       {
@@ -265,14 +292,7 @@ router.post("/", async (req, res) => {
       },
     ]);
 
-    await User.create({
-      user_id: "user_admin001",
-      email: "admin@artisanhome.com",
-      name: "Admin",
-      phone: "9999999999",
-      password_hash: await bcrypt.hash("Admin@123", 10),
-      role: "superadmin",
-    });
+    // Admin already ensured above.
 
     await Coupon.create({
       coupon_id: "coupon_welcome",
@@ -287,7 +307,11 @@ router.post("/", async (req, res) => {
       is_active: true,
     });
 
-    res.json({ message: "Database seeded successfully" });
+    res.json({
+      message: "Database seeded successfully",
+      admin_email: adminEmail,
+      admin_password: "Admin@123",
+    });
   } catch (err) {
     console.error("Seed error:", err);
     res.status(500).json({ detail: "Seeding failed", error: err.message });

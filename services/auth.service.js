@@ -6,8 +6,18 @@ const User = require("../models/User");
 
 const makeId = () => `user_${uuidv4().replace(/-/g, "").slice(0, 12)}`;
 
+const getJwtSecret = () => {
+  if (process.env.JWT_SECRET) return process.env.JWT_SECRET;
+  if (process.env.NODE_ENV === "production") {
+    const err = new Error("Server misconfigured: JWT_SECRET is not set");
+    err.status = 500;
+    throw err;
+  }
+  return "dev_jwt_secret_change_me";
+};
+
 const createToken = (user_id, role) =>
-  jwt.sign({ user_id, role }, process.env.JWT_SECRET, { expiresIn: "24h" });
+  jwt.sign({ user_id, role }, getJwtSecret(), { expiresIn: "24h" });
 
 const formatUser = (u) => ({
   user_id: u.user_id,
@@ -47,11 +57,8 @@ const register = async ({ email, name, password, phone }) => {
  * login({ email, password })
  */
 const login = async ({ email, password }) => {
-  const user = await User.findOne({ email }).lean();
-  console.log(email);
-  console.log(password);
-  console.log(user);
-  
+  const normalizedEmail = (email || "").toLowerCase().trim();
+  const user = await User.findOne({ email: normalizedEmail }).lean();
 
   const valid =
     user && (await bcrypt.compare(password, user.password_hash || ""));

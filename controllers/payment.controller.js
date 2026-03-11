@@ -6,7 +6,10 @@ const createOrder = async (req, res) => {
 };
 
 const verifyPayment = async (req, res) => {
-  await paymentService.verifyPayment(req.body);
+  await paymentService.verifyPayment({
+    ...req.body,
+    user_id: req.user.user_id,
+  });
   res.json({ status: "success", message: "Payment verified" });
 };
 

@@ -5,6 +5,7 @@ const Category = require("../models/Category");
 const Coupon = require("../models/Coupon");
 const User = require("../models/User");
 const { sendEmail, templates } = require("./email.service");
+const { ghostOrderFilter } = require("./order.service");
 
 const makeId = (prefix) =>
   `${prefix}_${uuidv4().replace(/-/g, "").slice(0, 12)}`;
@@ -19,8 +20,8 @@ const notFound = (what) => {
 const getDashboardStats = async () => {
   const [totalOrders, pendingOrders, totalCustomers, lowStock, revenueResult] =
     await Promise.all([
-      Order.countDocuments(),
-      Order.countDocuments({ fulfillment_status: "pending" }),
+      Order.countDocuments(ghostOrderFilter),
+      Order.countDocuments({ ...ghostOrderFilter, fulfillment_status: "pending" }),
       User.countDocuments({ role: "customer" }),
       Product.countDocuments({
         $expr: { $lte: ["$stock", "$low_stock_threshold"] },
@@ -43,14 +44,16 @@ const getDashboardStats = async () => {
 // ── Orders ───────────────────────────────────────────────
 
 const getOrders = async ({ status, page, limit }) => {
-  const query = status ? { fulfillment_status: status } : {};
+  // Always exclude ghost orders (online payment started but never completed)
+  const query = { ...ghostOrderFilter };
+  if (status) query.fulfillment_status = status;
   const skip = (page - 1) * limit;
   const [total, orders] = await Promise.all([
     Order.countDocuments(query),
     Order.find(query).sort({ created_at: -1 }).skip(skip).limit(limit).lean(),
   ]);
   return { orders, total, page, pages: Math.ceil(total / limit) };
-};
+}; 
 
 /**
  * updateOrderStatus(order_id, { status, tracking_number, courier_partner, estimated_delivery, note })

@@ -9,6 +9,24 @@ const makeOrderId = () => `order_${uuidv4().replace(/-/g, "").slice(0, 12)}`;
 const makeOrderNumber = () =>
   `AH${new Date().toISOString().slice(0, 10).replace(/-/g, "")}${uuidv4().replace(/-/g, "").slice(0, 6).toUpperCase()}`;
 
+// Payment methods that require online payment before fulfillment
+const ONLINE_PAYMENT_METHODS = ["upi", "netbanking", "card"];
+const isOnlinePayment = (method) => ONLINE_PAYMENT_METHODS.includes(method);
+
+/**
+ * Ghost orders = online payment method + payment still pending.
+ * These are orders where the user never completed / abandoned payment.
+ * They should be invisible to both the buyer and admin.
+ */
+const ghostOrderFilter = {
+  $nor: [
+    {
+      payment_method: { $in: ONLINE_PAYMENT_METHODS },
+      payment_status: "pending",
+    },
+  ],
+};
+
 /**
  * applyCoupon(coupon, subtotal)
  * Returns the discount amount. Throws if coupon is invalid for this order.
@@ -57,9 +75,34 @@ const applyCoupon = async (coupon_code, subtotal) => {
 };
 
 /**
+ * deductStockAndClearCart(items, user_id)
+ * Shared helper - called immediately for COD, or after payment
+ * verification for online orders.
+ */
+const deductStockAndClearCart = async (items, order_id) => {
+  for (const item of items) {
+    await Product.updateOne({ product_id: item.product_id },
+      {
+        $inc: {
+          stock: -item.quantity,
+          sales_count: item.quantity,
+        },
+      },
+    );
+  }
+  await Cart.deleteOne({ user_id });
+};
+
+/**
  * placeOrder(user, orderData)
- * Main order placement: validates stock, calculates totals,
- * saves order, clears cart, sends confirmation email.
+ * 
+ * COD flow
+ *     - Validate stock -> deuct stock -> clear cart -> create order (pending)
+ * 
+ * Online payment flow:
+ *     - Validate stock (but do NOT deduct yet, do NOT clear cart)
+ *     - Create order with payment_status "pending"
+ *     - Stock is deducted + cart cleared only after verifyPayment succeeds
  */
 const placeOrder = async (
   user,
@@ -98,11 +141,6 @@ const placeOrder = async (
       total: item_total,
     });
     subtotal += item_total;
-
-    // Deduct stock immediately
-    product.stock -= cartItem.quantity;
-    product.sales_count = (product.sales_count || 0) + cartItem.quantity;
-    await product.save();
   }
 
   if (items.length === 0) {
@@ -129,7 +167,7 @@ const placeOrder = async (
     shipping_address,
     payment_method,
     payment_status: "pending",
-    fulfillment_status: "pending",
+    fulfillment_status: online ? "pending" : "pending",
     // Record the initial status in the history timeline
     status_history: [{ status: "pending", note: "Order placed by customer" }],
     subtotal,
@@ -139,22 +177,57 @@ const placeOrder = async (
     total,
     coupon_code: coupon_code || null,
   });
+  
+  if (!online) {
+    // COD - deduct stock and clear cart right away
+    await deductStockAndClearCart(items, user.user_id);
 
-  // Clear cart after successful order
-  await Cart.deleteOne({ user_id: user.user_id });
+    // Send confirmation email for COD immedialtely
+    const { subject, html } = templates.orderConfirmation({
+      user,
+      order: order.toObject(),
+    });
+    sendEmail({ to: user.email, subject, html });
+  }
 
-  // Send confirmation email (non-blocking — failure won't affect the response)
-  const { subject, html } = templates.orderConfirmation({
-    user,
-    order: order.toObject(),
-  });
-  sendEmail({ to: user.email, subject, html });
+  // For Online payments: stock and cart are untouched until payment is verified
 
-  return { order_id: order.order_id, order_number: order.order_number, total };
+  return {
+    order_id: order.order_id,
+    order_number: order.order_number,
+    total,
+    // Return payment_method so that frontend knows whether to initiate payment
+    payment_method,
+    requires_payment: online,
+  };
 };
 
+/**
+ * confirmOnlinePayment(order_id, user_id)
+ * Called by payment.service after a successful Razorpay verification
+ * Deduce stock, clears cart, and sends the confirmation email
+ */
+const confirmOnlinePayment = async (order_id, user_id) => {
+  const order = await Order.findOne({ order_id }).lean();
+  if (!order) return; // safety guard
+
+  await deductStockAndClearCart(order.items, user_id);
+
+  // Fetch user for the email
+  const User = require("../models/User");
+  const user = await User.findOne({ user_id }).lean();
+  if (user?.email) {
+    const { subject, html } = templates.orderConfirmation({ user, order });
+    sendEmail({ to: user.email, subject, html });
+  }
+}
+
 const getOrders = async (user_id, { status, page, limit }) => {
-  const query = { user_id };
+  const query = {
+    user_id,
+    // Hide ghost orders
+    ...ghostOrderFilter,
+   };
   if (status) query.fulfillment_status = status;
   const skip = (page - 1) * limit;
   const total = await Order.countDocuments(query);
@@ -173,6 +246,14 @@ const getOrderById = async (order_id, user_id) => {
     e.status = 404;
     throw e;
   }
+
+  // Block access to ghost orders (online + still pending)
+  if (isOnlinePayment(order.payment_method) && order.payment_status === "pending") {
+    const e = new Error("Order not found");
+    e.status = 404;
+    throw e;
+  }
+
   return order;
 };
 
@@ -204,4 +285,4 @@ const getTracking = async (order_id) => {
   };
 };
 
-module.exports = { placeOrder, getOrders, getOrderById, getTracking };
+module.exports = { placeOrder, confirmOnlinePayment, getOrders, getOrderById, getTracking, ghostOrderFilter, isOnlinePayment };

@@ -53,7 +53,7 @@ const createOrder = Joi.object({
     .valid("cod", "razorpay", "upi", "netbanking", "card")
     .required()
     .messages({ "any.required": "Payment method is required" }),
-  coupon_code: Joi.string().trim().uppercase().max(30).optional().allow(""),
+  coupon_code: Joi.string().trim().uppercase().max(30).optional().allow("", null),
 });
 
 const addToCart = Joi.object({

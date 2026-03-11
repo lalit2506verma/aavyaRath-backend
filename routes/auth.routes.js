@@ -8,7 +8,7 @@ const { asyncHandler } = require("../middleware/errorHandler");
 router.post("/register", validate(v.register), asyncHandler(ctrl.register));
 router.post("/login", validate(v.login), asyncHandler(ctrl.login));
 router.get("/me", verifyToken, asyncHandler(ctrl.getMe));
-router.post("/session", asyncHandler(ctrl.exchangeSession));
+router.post("/google", asyncHandler(ctrl.googleAuth));
 router.post(
   "/forgot-password",
   validate(v.forgotPassword),

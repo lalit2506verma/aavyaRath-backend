@@ -79,7 +79,7 @@ const applyCoupon = async (coupon_code, subtotal) => {
  * Shared helper - called immediately for COD, or after payment
  * verification for online orders.
  */
-const deductStockAndClearCart = async (items, order_id) => {
+const deductStockAndClearCart = async (items, user_id) => {
   for (const item of items) {
     await Product.updateOne({ product_id: item.product_id },
       {
@@ -114,6 +114,8 @@ const placeOrder = async (
     e.status = 400;
     throw e;
   }
+
+  const online = isOnlinePayment(payment_method);
 
   // Build items list and check stock for each
   const items = [];
@@ -167,7 +169,7 @@ const placeOrder = async (
     shipping_address,
     payment_method,
     payment_status: "pending",
-    fulfillment_status: online ? "pending" : "pending",
+    fulfillment_status: "pending",
     // Record the initial status in the history timeline
     status_history: [{ status: "pending", note: "Order placed by customer" }],
     subtotal,

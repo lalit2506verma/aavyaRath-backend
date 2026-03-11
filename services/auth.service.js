@@ -1,6 +1,6 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const axios = require("axios");
+const { OAuth2Client } = require("google-auth-library");
 const { v4: uuidv4 } = require("uuid");
 const User = require("../models/User");
 
@@ -80,37 +80,73 @@ const login = async ({ email, password }) => {
 };
 
 /**
- * exchangeSession(session_id)
- * Exchanges an Emergent OAuth session for an app JWT.
+ * googleAuth({ id_token })
+ *
+ * Verifies a Google ID token issued by the frontend (e.g. via
+ * @react-oauth/google or accounts.google.com/gsi/client).
+ *
+ * Flow:
+ *   1. Frontend calls Google Sign-In → receives credential (id_token)
+ *   2. Frontend POSTs { id_token } to POST /api/auth/google
+ *   3. Backend verifies token with google-auth-library
+ *   4. Creates user if first login, otherwise updates profile picture
+ *   5. Returns app JWT — same shape as email/password login
+ *
+ * Required env var: GOOGLE_CLIENT_ID
  */
-const exchangeSession = async (session_id) => {
-  let oauthData;
+const googleAuth = async ({ id_token }) => {
+  if (!process.env.GOOGLE_CLIENT_ID) {
+    const err = new Error("Server misconfigured: GOOGLE_CLIENT_ID is not set");
+    err.status = 500;
+    throw err;
+  }
+
+  // Verify the token against your Google client ID
+  const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+  let payload;
   try {
-    const res = await axios.get(
-      "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data",
-      { headers: { "X-Session-ID": session_id } },
-    );
-    oauthData = res.data;
+    const ticket = await client.verifyIdToken({
+      idToken: id_token,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+    payload = ticket.getPayload();
   } catch {
-    const err = new Error("Invalid or expired session");
+    const err = new Error("Invalid or expired Google token");
     err.status = 401;
     throw err;
   }
 
-  const { email, name, picture } = oauthData;
+  const { email, name, picture, email_verified } = payload;
+
+  if (!email_verified) {
+    const err = new Error("Google account email is not verified");
+    err.status = 401;
+    throw err;
+  }
+
   let user = await User.findOne({ email: email.toLowerCase() });
 
   if (!user) {
+    // First time Google login — create account (no password_hash)
     user = await User.create({
       user_id: makeId(),
-      email,
+      email: email.toLowerCase(),
       name,
       profile_image: picture,
       role: "customer",
     });
-  } else if (picture && picture !== user.profile_image) {
-    user.profile_image = picture;
-    await user.save();
+  } else {
+    // Returning user — keep profile picture in sync if it changed
+    if (picture && picture !== user.profile_image) {
+      user.profile_image = picture;
+      await user.save();
+    }
+  }
+
+  if (!user.is_active) {
+    const err = new Error("Account is suspended");
+    err.status = 401;
+    throw err;
   }
 
   return {
@@ -119,4 +155,4 @@ const exchangeSession = async (session_id) => {
   };
 };
 
-module.exports = { register, login, exchangeSession };
+module.exports = { register, login, googleAuth };

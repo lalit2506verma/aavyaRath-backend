@@ -23,11 +23,20 @@ const getMe = (req, res) => {
   });
 };
 
-const exchangeSession = async (req, res) => {
-  const { session_id } = req.body;
-  if (!session_id)
-    return res.status(400).json({ detail: "session_id is required" });
-  const result = await authService.exchangeSession(session_id);
+/**
+ * googleAuth
+ * Accepts the Google ID token produced by  the frontend's Google Sign-in
+ * widget (@react-oauth/google or the plain GSI script).
+ * Body: { id_token: "<Google credential string>" }
+ * Returns the same { token, user } shape as normal login.
+ */
+const googleAuth = async (req, res) => {
+  const { id_token } = req.body;
+  if (!id_token) {
+    return res.status(400).json({ detail: "id_token is required" });
+  }
+
+  const result = await authService.googleAuth({ id_token });
   res.json(result);
 };
 
@@ -47,7 +56,7 @@ module.exports = {
   register,
   login,
   getMe,
-  exchangeSession,
+  googleAuth,
   forgotPassword,
   resetPassword,
 };

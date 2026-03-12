@@ -19,6 +19,7 @@ const AddressSchema = new mongoose.Schema(
   },
 );
 
+
 const UserSchema = new mongoose.Schema(
   {
     user_id: { type: String, required: true, unique: true, index: true },

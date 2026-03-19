@@ -4,7 +4,7 @@ const Category = require("../models/Category");
 const Product = require("../models/Product");
 const User = require("../models/User");
 const Coupon = require("../models/Coupon");
-const { FAQ } = require("../models/misc");
+const { FAQ } = require("../models/Misc");
 
 router.post("/", async (req, res) => {
   try {

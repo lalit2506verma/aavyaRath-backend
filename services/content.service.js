@@ -1,5 +1,5 @@
 const { v4: uuidv4 } = require("uuid");
-const { Contact, Newsletter, FAQ, BlogPost } = require("../models/misc");
+const { Contact, Newsletter, FAQ, BlogPost } = require("../models/Misc");
 
 const submitContact = async (data) => {
   await Contact.create({
